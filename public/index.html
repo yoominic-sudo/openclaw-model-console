@@ -113,6 +113,32 @@
       <div id="testResult" class="result">等待操作...</div>
     </div>
 
+    <div class="card" id="modelDetailCard" style="display:none">
+      <div class="label">模型参数（选中模型后显示）</div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="editBaseUrl" placeholder="Base URL" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="editApiKey" placeholder="API Key" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;">
+        <select id="editApi" style="flex:1">
+          <option value="openai-responses">openai-responses</option>
+          <option value="anthropic-messages">anthropic-messages</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="editModelName" placeholder="显示名称" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label style="font-size:12px"><input type="checkbox" id="editReasoning"> 推理模型</label>
+        <input type="number" id="editContextWindow" placeholder="上下文窗口" style="width:140px;padding:8px;border:1px solid var(--line);border-radius:9px;">
+        <input type="number" id="editMaxTokens" placeholder="最大输出" style="width:140px;padding:8px;border:1px solid var(--line);border-radius:9px;">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="saveModelBtn" class="warn">保存修改</button>
+      </div>
+      <div id="saveResult" class="result">点击保存修改参数...</div>
+    </div>
+
     <div class="card">
       <div class="label">添加新模型</div>
       <div class="row">
@@ -168,6 +194,48 @@ function selectedModel(){
   const sel = document.getElementById('modelSelect');
   const [provider, modelId] = sel.value.split('/');
   return { full: sel.value, provider, modelId };
+}
+
+async function loadModelDetail(){
+  const m = selectedModel();
+  if (!m.full) return;
+  const card = document.getElementById('modelDetailCard');
+  try {
+    const data = await callApi('/api/model-detail?full=' + encodeURIComponent(m.full));
+    document.getElementById('editBaseUrl').value = data.baseUrl || '';
+    document.getElementById('editApiKey').value = data.apiKey || '';
+    document.getElementById('editApi').value = data.api || 'openai-responses';
+    document.getElementById('editModelName').value = data.modelName || '';
+    document.getElementById('editReasoning').checked = data.reasoning || false;
+    document.getElementById('editContextWindow').value = data.contextWindow || 200000;
+    document.getElementById('editMaxTokens').value = data.maxTokens || 8192;
+    card.style.display = 'block';
+  } catch (e) {
+    card.style.display = 'none';
+  }
+}
+
+async function saveModelDetail(){
+  const m = selectedModel();
+  if (!m.full) return;
+  const r = document.getElementById('saveResult');
+  r.textContent = '保存中...';
+  try {
+    const out = await callApi('/api/update-model', 'POST', {
+      full: m.full,
+      baseUrl: document.getElementById('editBaseUrl').value.trim(),
+      apiKey: document.getElementById('editApiKey').value.trim(),
+      api: document.getElementById('editApi').value,
+      modelName: document.getElementById('editModelName').value.trim(),
+      reasoning: document.getElementById('editReasoning').checked,
+      contextWindow: parseInt(document.getElementById('editContextWindow').value) || 200000,
+      maxTokens: parseInt(document.getElementById('editMaxTokens').value) || 8192
+    });
+    r.innerHTML = '<span class="ok">保存成功，网关重启中</span>';
+    await loadStatus();
+  } catch (e) {
+    r.innerHTML = '<span class="bad">保存失败</span> ' + esc(e.message);
+  }
 }
 
 function renderStatus(data){
@@ -310,6 +378,8 @@ document.getElementById('testBtn').onclick = testModel;
 document.getElementById('switchBtn').onclick = switchModel;
 document.getElementById('deleteBtn').onclick = deleteModel;
 document.getElementById('addModelBtn').onclick = addModel;
+document.getElementById('modelSelect').onchange = loadModelDetail;
+document.getElementById('saveModelBtn').onclick = saveModelDetail;
 
 Promise.all([loadStatus(), loadHistory()]).catch(err => {
   document.getElementById('testResult').innerHTML = `<span class="bad">初始化失败</span>\n${esc(err.message)}`;

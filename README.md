@@ -11,6 +11,7 @@
 - 一键回滚历史配置
 - 新模型添加（添加后自动测试格式与可用性）
 - 删除模型（自动处理 primary/fallback 并重启）
+- 模型参数查看与编辑（选中模型后显示参数，可修改）
 
 > 说明：本仓库为“开源脱敏版”，不包含任何真实密钥、历史快照或个人配置。
 
@@ -175,6 +176,29 @@ node server.js
   "full": "myapi-openai/gpt-4.1-mini"
 }
 ```
+
+### `GET /api/model-detail`
+查询参数：
+- `full`: 模型全名（如 `provider/model`）
+
+返回模型详细参数（baseUrl、apiKey、api、modelName、reasoning、contextWindow、maxTokens）。
+
+### `POST /api/update-model`
+请求体：
+
+```json
+{
+  "full": "myapi-openai/gpt-4.1-mini",
+  "baseUrl": "https://...",
+  "apiKey": "sk-xxx",
+  "api": "openai-responses",
+  "modelName": "GPT-4.1 Mini",
+  "reasoning": false,
+  "contextWindow": 200000,
+  "maxTokens": 8192
+}
+```
+
 
 
 ---

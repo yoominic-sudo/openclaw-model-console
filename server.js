@@ -282,7 +282,43 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = req.url.split('?')[0];
 
-    if (req.method === 'GET' && url === '/api/status') {
+    
+    if (req.method === 'GET' && url.startsWith('/api/model-detail')) {
+      const params = new URL(req.url, 'http://x').searchParams;
+      const full = params.get('full') || '';
+      if (!full.includes('/')) {
+        sendJson(res, 400, { error: 'invalid model id' });
+        return;
+      }
+      const slash = full.indexOf('/');
+      const providerName = full.slice(0, slash);
+      const modelId = full.slice(slash + 1);
+      const { parsed } = await readConfig();
+      const provider = (((parsed.models || {}).providers) || {})[providerName];
+      if (!provider) {
+        sendJson(res, 404, { error: 'provider not found' });
+        return;
+      }
+      const model = (provider.models || []).find(m => String(m.id || '') === modelId);
+      if (!model) {
+        sendJson(res, 404, { error: 'model not found' });
+        return;
+      }
+      sendJson(res, 200, {
+        provider: providerName,
+        baseUrl: provider.baseUrl || '',
+        api: provider.api || '',
+        apiKey: provider.apiKey || '',
+        modelId: model.id || '',
+        modelName: model.name || '',
+        reasoning: model.reasoning || false,
+        contextWindow: model.contextWindow || 200000,
+        maxTokens: model.maxTokens || 8192
+      });
+      return;
+    }
+
+if (req.method === 'GET' && url === '/api/status') {
       const { parsed } = await readConfig();
       const models = listModels(parsed);
       const current = ((((parsed.agents || {}).defaults || {}).model) || {});
@@ -509,7 +545,68 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    await serveStatic(req, res);
+    
+    if (req.method === 'POST' && url === '/api/update-model') {
+      const body = await readJsonBody(req);
+      const full = String(body.full || '').trim();
+      const newBaseUrl = String(body.baseUrl || '').trim();
+      const newApiKey = String(body.apiKey || '').trim();
+      const newApi = String(body.api || '').trim();
+      const newModelName = String(body.modelName || '').trim();
+      const newReasoning = Boolean(body.reasoning);
+      const newContextWindow = Number(body.contextWindow) || 200000;
+      const newMaxTokens = Number(body.maxTokens) || 8192;
+
+      if (!full.includes('/')) {
+        sendJson(res, 400, { error: 'invalid model id' });
+        return;
+      }
+
+      const slash = full.indexOf('/');
+      const providerName = full.slice(0, slash);
+      const modelId = full.slice(slash + 1);
+
+      const { raw, parsed } = await readConfig();
+      await saveHistory('update-model-pre', raw, `before update ${full}`);
+
+      const providers = (((parsed.models || {}).providers) || {});
+      const provider = providers[providerName];
+      if (!provider) {
+        sendJson(res, 404, { error: 'provider not found' });
+        return;
+      }
+
+      const modelList = provider.models || [];
+      const modelIndex = modelList.findIndex(m => String(m.id || '') === modelId);
+      if (modelIndex === -1) {
+        sendJson(res, 404, { error: 'model not found' });
+        return;
+      }
+
+      if (newBaseUrl) provider.baseUrl = newBaseUrl;
+      if (newApiKey) provider.apiKey = newApiKey;
+      if (newApi && ['openai-responses', 'anthropic-messages'].includes(newApi)) {
+        provider.api = newApi;
+      }
+
+      const model = modelList[modelIndex];
+      if (newModelName) model.name = newModelName;
+      model.reasoning = newReasoning;
+      model.contextWindow = newContextWindow;
+      model.maxTokens = newMaxTokens;
+
+      await writeConfig(parsed);
+      restartGateway();
+
+      sendJson(res, 200, {
+        ok: true,
+        updated: full,
+        restarted: true
+      });
+      return;
+    }
+
+await serveStatic(req, res);
   } catch (err) {
     sendJson(res, 500, { error: err.message || String(err) });
   }
