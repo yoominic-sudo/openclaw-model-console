@@ -368,6 +368,74 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+
+    if (req.method === 'POST' && url === '/api/delete-model') {
+      const body = await readJsonBody(req);
+      const full = String(body.full || '').trim();
+      if (!full.includes('/')) {
+        sendJson(res, 400, { error: 'full model id format: provider/model' });
+        return;
+      }
+
+      const slash = full.indexOf('/');
+      const providerName = full.slice(0, slash);
+      const modelId = full.slice(slash + 1);
+      if (!providerName || !modelId) {
+        sendJson(res, 400, { error: 'invalid full model id' });
+        return;
+      }
+
+      const { raw, parsed } = await readConfig();
+      const providers = (((parsed.models || {}).providers) || {});
+      const provider = providers[providerName];
+      const modelList = provider && Array.isArray(provider.models) ? provider.models : [];
+      const exists = modelList.some(m => String(m.id || '') === modelId);
+      if (!exists) {
+        sendJson(res, 404, { error: `Model not found: ${full}` });
+        return;
+      }
+
+      const allBefore = listModels(parsed).map(m => m.full);
+      if (allBefore.length <= 1 && allBefore.includes(full)) {
+        sendJson(res, 400, { error: 'Cannot delete the last model in config' });
+        return;
+      }
+
+      await saveHistory('delete-model-pre', raw, `before delete ${full}`);
+
+      provider.models = modelList.filter(m => String(m.id || '') !== modelId);
+      if (provider.models.length === 0) {
+        delete providers[providerName];
+      }
+
+      parsed.agents = parsed.agents || {};
+      parsed.agents.defaults = parsed.agents.defaults || {};
+      parsed.agents.defaults.model = parsed.agents.defaults.model || {};
+      const modelCfg = parsed.agents.defaults.model;
+      const allAfter = listModels(parsed).map(m => m.full);
+
+      const oldFallbacks = Array.isArray(modelCfg.fallbacks) ? modelCfg.fallbacks : [];
+      modelCfg.fallbacks = oldFallbacks.filter(v => v !== full && allAfter.includes(v));
+
+      if (!allAfter.includes(modelCfg.primary || '')) {
+        const preferred = modelCfg.fallbacks.find(v => allAfter.includes(v));
+        modelCfg.primary = preferred || allAfter[0] || '';
+      }
+      modelCfg.fallbacks = modelCfg.fallbacks.filter(v => v !== modelCfg.primary);
+
+      await writeConfig(parsed);
+      restartGateway();
+
+      sendJson(res, 200, {
+        ok: true,
+        deleted: full,
+        newPrimary: modelCfg.primary,
+        remaining: allAfter.length,
+        restarted: true
+      });
+      return;
+    }
+
     if (req.method === 'POST' && url === '/api/add-model') {
       const body = await readJsonBody(req);
       const providerName = String(body.providerName || '').trim();

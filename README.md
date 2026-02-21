@@ -10,6 +10,7 @@
 - 历史版本快照（最多保留 10 条）
 - 一键回滚历史配置
 - 新模型添加（添加后自动测试格式与可用性）
+- 删除模型（自动处理 primary/fallback 并重启）
 
 > 说明：本仓库为“开源脱敏版”，不包含任何真实密钥、历史快照或个人配置。
 
@@ -58,6 +59,15 @@
 1. 参数校验（必填、api 类型合法）
 2. 写入配置
 3. 立即调用测试接口验证格式和可用性
+
+
+
+### 1.6 删除模型
+- 可删除当前所选 `provider/model`
+- 删除前自动保存快照
+- 如果删除的是当前 primary，会自动切换到可用模型
+- 自动清理失效 fallback
+- 删除后自动执行 `openclaw gateway restart`
 
 ---
 
@@ -156,6 +166,16 @@ node server.js
   "modelName": "GPT-4.1 Mini"
 }
 ```
+
+### `POST /api/delete-model`
+请求体：
+
+```json
+{
+  "full": "myapi-openai/gpt-4.1-mini"
+}
+```
+
 
 ---
 

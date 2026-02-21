@@ -108,6 +108,7 @@
       <div class="row" style="margin-top:8px">
         <button id="testBtn">测试可用性</button>
         <button id="switchBtn" class="warn">切换为主模型并重启网关</button>
+        <button id="deleteBtn" class="alt">删除当前所选模型</button>
       </div>
       <div id="testResult" class="result">等待操作...</div>
     </div>
@@ -235,6 +236,27 @@ async function switchModel(){
   }
 }
 
+
+async function deleteModel(){
+  const r = document.getElementById('testResult');
+  const m = selectedModel();
+  if (!m.full) {
+    r.innerHTML = '<span class="bad">请先选择要删除的模型</span>';
+    return;
+  }
+  if (!confirm(`确认删除模型 ${m.full} ?`)) return;
+  try {
+    const out = await callApi('/api/delete-model', 'POST', {full: m.full});
+    r.innerHTML = `<span class="ok">删除成功，网关重启中</span>
+${esc(JSON.stringify(out, null, 2))}`;
+    await loadStatus();
+    await loadHistory();
+  } catch (e) {
+    r.innerHTML = `<span class="bad">删除失败</span>
+${esc(e.message)}`;
+  }
+}
+
 async function restoreCfg(id){
   if (!confirm('确认恢复此历史配置并重启网关?')) return;
   const r = document.getElementById('testResult');
@@ -286,6 +308,7 @@ document.getElementById('refreshBtn').onclick = async () => { await loadStatus()
 document.getElementById('reloadHistoryBtn').onclick = async () => { await loadHistory(); };
 document.getElementById('testBtn').onclick = testModel;
 document.getElementById('switchBtn').onclick = switchModel;
+document.getElementById('deleteBtn').onclick = deleteModel;
 document.getElementById('addModelBtn').onclick = addModel;
 
 Promise.all([loadStatus(), loadHistory()]).catch(err => {
