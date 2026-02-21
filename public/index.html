@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenClaw Model Console</title>
+  <style>
+    :root {
+      --bg: #f4efe7;
+      --card: #fffaf2;
+      --ink: #1f2a2e;
+      --muted: #57656b;
+      --accent: #0f766e;
+      --accent2: #c2410c;
+      --ok: #166534;
+      --bad: #9f1239;
+      --line: #e9dccf;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Noto Sans SC", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(1200px 500px at 20% -10%, #f8d9b9 0, transparent 60%),
+                  radial-gradient(900px 400px at 100% 0%, #b9ece0 0, transparent 65%),
+                  var(--bg);
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+    .hero { margin: 6px 0 14px; }
+    .hero h1 { margin: 0; font-size: 22px; }
+    .hero p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 18px rgba(0,0,0,.06);
+    }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .pill { padding: 5px 9px; border-radius: 999px; font-size: 12px; background: #f4eee6; }
+    button {
+      border: 0;
+      background: var(--accent);
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 9px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.alt { background: #334155; }
+    button.warn { background: var(--accent2); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 8px;
+      border-radius: 9px;
+      color: var(--ink);
+    }
+    .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .mono { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+    .result {
+      margin-top: 8px;
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      background: #f8f7f4;
+      border: 1px solid var(--line);
+    }
+    .ok { color: var(--ok); }
+    .bad { color: var(--bad); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 6px; border-bottom: 1px dashed var(--line); font-size: 12px; }
+    @media (max-width: 700px) {
+      .hero h1 { font-size: 20px; }
+      button { width: 100%; }
+      .row > * { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>OpenClaw 模型控制台</h1>
+      <p>读取本机配置 -> 测试模型可用性 -> 一键切主模型 -> 可回滚历史(最多10条)</p>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <div class="label">当前主模型</div>
+          <div id="currentPrimary" class="mono">loading...</div>
+        </div>
+        <button class="alt" id="refreshBtn">刷新</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="pill">配置文件: <span id="configPath" class="mono">-</span></span>
+        <span class="pill">模型总数: <span id="modelTotal">0</span></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">选择模型</div>
+      <select id="modelSelect"></select>
+      <div class="row" style="margin-top:8px">
+        <button id="testBtn">测试可用性</button>
+        <button id="switchBtn" class="warn">切换为主模型并重启网关</button>
+      </div>
+      <div id="testResult" class="result">等待操作...</div>
+    </div>
+
+    <div class="card">
+      <div class="label">添加新模型</div>
+      <div class="row">
+        <input type="text" id="addProvider" placeholder="Provider名 (如 myapi-claude)" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;">
+        <input type="text" id="addBaseUrl" placeholder="Base URL (如 https://timicc.com)" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="addApiKey" placeholder="API Key" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;">
+        <select id="addApi" style="flex:1">
+          <option value="openai-responses">openai-responses</option>
+          <option value="anthropic-messages">anthropic-messages</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="addModelId" placeholder="Model ID (如 claude-opus-4-6)" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;">
+        <input type="text" id="addModelName" placeholder="显示名称 (可选)" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="addModelBtn" class="warn">添加模型并测试</button>
+      </div>
+      <div id="addResult" class="result">填写上方信息后点击添加...</div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div class="label">配置历史（最多10个）</div>
+        <button id="reloadHistoryBtn" class="alt">刷新历史</button>
+      </div>
+      <table>
+        <thead><tr><th>时间</th><th>类型</th><th>主模型</th><th>操作</th></tr></thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+let statusCache = null;
+
+function esc(s){ return String(s || '').replace(/[<>&]/g, x => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[x])); }
+
+async function callApi(path, method='GET', body=null){
+  const res = await fetch(path, {
+    method,
+    headers: {'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : null
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || JSON.stringify(data));
+  return data;
+}
+
+function selectedModel(){
+  const sel = document.getElementById('modelSelect');
+  const [provider, modelId] = sel.value.split('/');
+  return { full: sel.value, provider, modelId };
+}
+
+function renderStatus(data){
+  statusCache = data;
+  document.getElementById('currentPrimary').textContent = data.current.primary || '(未配置)';
+  document.getElementById('configPath').textContent = data.configPath;
+  document.getElementById('modelTotal').textContent = data.totalModels;
+
+  const sel = document.getElementById('modelSelect');
+  sel.innerHTML = data.models.map(m => {
+    const tags = [m.provider, m.modelId];
+    if (m.isPrimary) tags.push('当前主模型');
+    if (m.inFallbacks) tags.push('fallback');
+    return `<option value="${esc(m.full)}">${esc(m.name)} | ${esc(tags.join(' / '))}</option>`;
+  }).join('');
+
+  const p = data.models.find(m => m.isPrimary);
+  if (p) sel.value = p.full;
+}
+
+async function loadStatus(){
+  const data = await callApi('/api/status');
+  renderStatus(data);
+}
+
+async function loadHistory(){
+  const data = await callApi('/api/history');
+  const body = document.getElementById('historyBody');
+  if (!data.history.length) {
+    body.innerHTML = '<tr><td colspan="4">暂无历史</td></tr>';
+    return;
+  }
+  body.innerHTML = data.history.map(h => `
+    <tr>
+      <td>${esc(h.createdAt)}</td>
+      <td>${esc(h.kind || '')}</td>
+      <td class="mono">${esc(h.primary || '')}</td>
+      <td><button class="alt" onclick="restoreCfg('${esc(h.id)}')">恢复</button></td>
+    </tr>
+  `).join('');
+}
+
+async function testModel(){
+  const r = document.getElementById('testResult');
+  const m = selectedModel();
+  r.textContent = '测试中...';
+  try {
+    const out = await callApi('/api/test-model', 'POST', m);
+    r.innerHTML = `<span class="${out.ok ? 'ok' : 'bad'}">${out.ok ? '可用' : '不可用'} (HTTP ${out.status})</span>\n${esc(out.body || '')}`;
+  } catch (e) {
+    r.innerHTML = `<span class="bad">测试失败</span>\n${esc(e.message)}`;
+  }
+}
+
+async function switchModel(){
+  const r = document.getElementById('testResult');
+  const m = selectedModel();
+  if (!confirm(`确认切换主模型到 ${m.full} ?`)) return;
+  try {
+    const out = await callApi('/api/switch-model', 'POST', m);
+    r.innerHTML = `<span class="ok">切换成功，网关重启中</span>\n${esc(JSON.stringify(out, null, 2))}`;
+    await loadStatus();
+    await loadHistory();
+  } catch (e) {
+    r.innerHTML = `<span class="bad">切换失败</span>\n${esc(e.message)}`;
+  }
+}
+
+async function restoreCfg(id){
+  if (!confirm('确认恢复此历史配置并重启网关?')) return;
+  const r = document.getElementById('testResult');
+  try {
+    const out = await callApi('/api/restore', 'POST', {id});
+    r.innerHTML = `<span class="ok">恢复成功，网关重启中</span>\n${esc(JSON.stringify(out, null, 2))}`;
+    await loadStatus();
+    await loadHistory();
+  } catch (e) {
+    r.innerHTML = `<span class="bad">恢复失败</span>\n${esc(e.message)}`;
+  }
+}
+
+window.restoreCfg = restoreCfg;
+
+async function addModel(){
+  const r = document.getElementById('addResult');
+  const providerName = document.getElementById('addProvider').value.trim();
+  const baseUrl = document.getElementById('addBaseUrl').value.trim();
+  const apiKey = document.getElementById('addApiKey').value.trim();
+  const api = document.getElementById('addApi').value;
+  const modelId = document.getElementById('addModelId').value.trim();
+  const modelName = document.getElementById('addModelName').value.trim();
+
+  if (!providerName || !baseUrl || !apiKey || !modelId) {
+    r.innerHTML = '<span class="bad">请填写完整信息 (Provider名、Base URL、API Key、Model ID)</span>';
+    return;
+  }
+
+  r.textContent = '添加并测试中...';
+  try {
+    const out = await callApi('/api/add-model', 'POST', {
+      providerName, baseUrl, apiKey, api, modelId, modelName
+    });
+    if (out.ok && out.testResult?.ok) {
+      r.innerHTML = `<span class="ok">添加成功 ✓ 并通过可用性测试</span>\n${esc(out.added)}\n${esc(out.testResult.body || '')}`;
+      await loadStatus();
+    } else if (out.ok) {
+      r.innerHTML = `<span class="bad">添加成功但测试失败</span>\n${out.added}\n${esc(out.testResult?.body || out.testResult?.error || '')}`;
+    } else {
+      r.innerHTML = `<span class="bad">添加失败</span>\n${esc(out.error || '')}`;
+    }
+  } catch (e) {
+    r.innerHTML = `<span class="bad">请求失败</span>\n${esc(e.message)}`;
+  }
+}
+
+document.getElementById('refreshBtn').onclick = async () => { await loadStatus(); };
+document.getElementById('reloadHistoryBtn').onclick = async () => { await loadHistory(); };
+document.getElementById('testBtn').onclick = testModel;
+document.getElementById('switchBtn').onclick = switchModel;
+document.getElementById('addModelBtn').onclick = addModel;
+
+Promise.all([loadStatus(), loadHistory()]).catch(err => {
+  document.getElementById('testResult').innerHTML = `<span class="bad">初始化失败</span>\n${esc(err.message)}`;
+});
+</script>
+</body>
+</html>

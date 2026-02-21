@@ -1,0 +1,11 @@
+# Runtime data
+/data/history/*
+!/data/history/.gitkeep
+
+# Logs
+*.log
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
