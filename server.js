@@ -338,6 +338,90 @@ if (req.method === 'GET' && url === '/api/status') {
       return;
     }
 
+    // 新增：获取完整配置文件内容
+    if (req.method === 'GET' && url === '/api/config') {
+      const { raw, parsed } = await readConfig();
+      sendJson(res, 200, {
+        path: CONFIG_PATH,
+        raw,
+        parsed
+      });
+      return;
+    }
+
+    // 新增：手动保存当前配置到历史
+    if (req.method === 'POST' && url === '/api/config/save') {
+      const body = await readJsonBody(req);
+      const note = String(body.note || 'manual save').trim();
+      const { raw } = await readConfig();
+      const id = await saveHistory('manual', raw, note);
+      sendJson(res, 200, { ok: true, id, note });
+      return;
+    }
+
+    // 新增：恢复指定历史版本（覆盖当前配置）
+    if (req.method === 'POST' && url === '/api/config/restore') {
+      const body = await readJsonBody(req);
+      const id = String(body.id || '');
+      if (!id) {
+        sendJson(res, 400, { error: 'history id required' });
+        return;
+      }
+      const file = path.join(HISTORY_DIR, `${id}.json`);
+      try {
+        const raw = await fsp.readFile(file, 'utf8');
+        const snap = JSON.parse(raw);
+        const current = await readConfig();
+        await saveHistory('config-restore-pre', current.raw, `before restore ${id}`);
+        await writeConfig(snap.config);
+        restartGateway();
+        sendJson(res, 200, { ok: true, restored: id, restarted: true });
+      } catch (e) {
+        sendJson(res, 404, { error: `history not found: ${id}` });
+      }
+      return;
+    }
+
+    // 新增：获取指定历史版本的详情
+    if (req.method === 'GET' && url.startsWith('/api/history/')) {
+      const id = url.split('/').pop();
+      const file = path.join(HISTORY_DIR, `${id}.json`);
+      try {
+        const raw = await fsp.readFile(file, 'utf8');
+        const snap = JSON.parse(raw);
+        sendJson(res, 200, {
+          id: snap.id,
+          createdAt: snap.createdAt,
+          kind: snap.kind,
+          note: snap.note,
+          raw: JSON.stringify(snap.config, null, 2)
+        });
+      } catch (e) {
+        sendJson(res, 404, { error: `history not found: ${id}` });
+      }
+      return;
+    }
+
+    // 新增：直接保存配置文件（覆盖）
+    if (req.method === 'POST' && url === '/api/config/write') {
+      const body = await readJsonBody(req);
+      const raw = String(body.config || '');
+      try {
+        // 验证 JSON 格式
+        JSON.parse(raw);
+        // 保存当前配置到历史
+        const current = await readConfig();
+        await saveHistory('config-write-pre', current.raw, 'before write');
+        // 写入新配置
+        await writeConfig(JSON.parse(raw));
+        restartGateway();
+        sendJson(res, 200, { ok: true, restarted: true });
+      } catch (e) {
+        sendJson(res, 400, { error: 'invalid json: ' + e.message });
+      }
+      return;
+    }
+
     if (req.method === 'POST' && url === '/api/test-model') {
       const body = await readJsonBody(req);
       const provider = String(body.provider || '');

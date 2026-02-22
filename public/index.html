@@ -164,6 +164,24 @@
 
     <div class="card">
       <div class="row" style="justify-content:space-between">
+        <div class="label">配置文件操作</div>
+        <div>
+          <button id="viewConfigBtn" class="alt">查看配置</button>
+          <button id="saveConfigBtn" class="warn">保存快照</button>
+        </div>
+      </div>
+      <div id="configView" style="display:none; margin-top:8px">
+        <textarea id="configEditor" style="width:100%;height:300px;font-family:monospace;font-size:11px;padding:8px;border:1px solid var(--line);border-radius:9px;white-space:pre;overflow:auto;"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="saveConfigEditBtn" class="warn">保存修改并重启网关</button>
+          <button id="closeConfigBtn" class="alt">关闭</button>
+        </div>
+        <div id="configSaveResult" class="result">点击保存修改...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
         <div class="label">配置历史（最多10个）</div>
         <button id="reloadHistoryBtn" class="alt">刷新历史</button>
       </div>
@@ -171,6 +189,14 @@
         <thead><tr><th>时间</th><th>类型</th><th>主模型</th><th>操作</th></tr></thead>
         <tbody id="historyBody"></tbody>
       </table>
+      <div id="historyDetail" style="display:none; margin-top:8px">
+        <div class="label">历史版本详情</div>
+        <textarea id="historyEditor" readonly style="width:100%;height:200px;font-family:monospace;font-size:11px;padding:8px;border:1px solid var(--line);border-radius:9px;background:#f8f7f4;white-space:pre;overflow:auto;"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="restoreHistoryBtn" class="warn">恢复此版本</button>
+          <button id="closeHistoryBtn" class="alt">关闭</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -273,7 +299,10 @@ async function loadHistory(){
       <td>${esc(h.createdAt)}</td>
       <td>${esc(h.kind || '')}</td>
       <td class="mono">${esc(h.primary || '')}</td>
-      <td><button class="alt" onclick="restoreCfg('${esc(h.id)}')">恢复</button></td>
+      <td>
+        <button class="alt" onclick="viewHistoryDetail('${esc(h.id)}')">查看</button>
+        <button class="warn" onclick="restoreCfg('${esc(h.id)}')">恢复</button>
+      </td>
     </tr>
   `).join('');
 }
@@ -380,6 +409,86 @@ document.getElementById('deleteBtn').onclick = deleteModel;
 document.getElementById('addModelBtn').onclick = addModel;
 document.getElementById('modelSelect').onchange = loadModelDetail;
 document.getElementById('saveModelBtn').onclick = saveModelDetail;
+
+// 新增：查看配置
+let currentConfigRaw = '';
+document.getElementById('viewConfigBtn').onclick = async () => {
+  try {
+    const data = await callApi('/api/config');
+    currentConfigRaw = data.raw;
+    document.getElementById('configEditor').value = data.raw;
+    document.getElementById('configView').style.display = 'block';
+  } catch (e) {
+    alert('加载配置失败: ' + e.message);
+  }
+};
+
+// 新增：保存快照
+document.getElementById('saveConfigBtn').onclick = async () => {
+  const note = prompt('请输入快照备注:');
+  if (note === null) return;
+  try {
+    const out = await callApi('/api/config/save', 'POST', { note: note || 'manual save' });
+    alert('保存成功! ID: ' + out.id);
+    await loadHistory();
+  } catch (e) {
+    alert('保存失败: ' + e.message);
+  }
+};
+
+// 保存配置修改
+document.getElementById('saveConfigEditBtn').onclick = async () => {
+  const r = document.getElementById('configSaveResult');
+  const newConfig = document.getElementById('configEditor').value;
+  r.textContent = '保存中...';
+  try {
+    // 验证 JSON 格式
+    JSON.parse(newConfig);
+    // 保存并写入
+    await callApi('/api/config/write', 'POST', { config: newConfig });
+    r.innerHTML = '<span class="ok">保存成功，网关重启中</span>';
+    await loadStatus();
+    await loadHistory();
+  } catch (e) {
+    r.innerHTML = '<span class="bad">保存失败: ' + esc(e.message) + '</span>';
+  }
+};
+
+document.getElementById('closeConfigBtn').onclick = () => {
+  document.getElementById('configView').style.display = 'none';
+};
+
+// 历史版本详情
+let selectedHistoryId = '';
+document.getElementById('restoreHistoryBtn').onclick = async () => {
+  if (!selectedHistoryId) return;
+  if (!confirm('确认恢复此历史版本并重启网关?')) return;
+  try {
+    await callApi('/api/config/restore', 'POST', { id: selectedHistoryId });
+    alert('恢复成功，请刷新页面');
+    document.getElementById('historyDetail').style.display = 'none';
+    await loadStatus();
+    await loadHistory();
+  } catch (e) {
+    alert('恢复失败: ' + e.message);
+  }
+};
+
+document.getElementById('closeHistoryBtn').onclick = () => {
+  document.getElementById('historyDetail').style.display = 'none';
+  selectedHistoryId = '';
+};
+
+window.viewHistoryDetail = async function(id) {
+  selectedHistoryId = id;
+  try {
+    const data = await callApi('/api/history/' + id);
+    document.getElementById('historyEditor').value = data.raw;
+    document.getElementById('historyDetail').style.display = 'block';
+  } catch (e) {
+    alert('加载失败: ' + e.message);
+  }
+};
 
 Promise.all([loadStatus(), loadHistory()]).catch(err => {
   document.getElementById('testResult').innerHTML = `<span class="bad">初始化失败</span>\n${esc(err.message)}`;
